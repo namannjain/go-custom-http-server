@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"net"
@@ -50,6 +52,7 @@ func (res Response) createResponseString() string {
 	for k, v := range res.Headers {
 		headerString.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
 	}
+
 	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", res.StatusCode, statusText, headerString.String(), res.Body)
 }
 
@@ -93,6 +96,25 @@ func CreateFileInDir(directory string, fileName string, fileData []byte) error {
 
 	fmt.Println("Successfully created file with its content")
 	return nil
+}
+
+func compressStringToGzip(data string) ([]byte, error) {
+	var gzipBuffer bytes.Buffer
+
+	gzipWriter := gzip.NewWriter(&gzipBuffer)
+	defer gzipWriter.Close()
+
+	_, err := gzipWriter.Write([]byte(data))
+	if err != nil {
+		return nil, fmt.Errorf("error writing data to Gzip writer: %w", err)
+	}
+
+	err = gzipWriter.Flush()
+	if err != nil {
+		return nil, fmt.Errorf("error flushing Gzip writer: %w", err)
+	}
+
+	return gzipBuffer.Bytes(), nil
 }
 
 func handleConnection(conn net.Conn) {
@@ -157,7 +179,15 @@ func handleConnection(conn net.Conn) {
 	//handle encoding
 	if acceptEncoding, ok := request.Headers["Accept-Encoding"]; ok && strings.Contains(acceptEncoding, "gzip") && response.StatusCode != 404 {
 		response.Headers["Content-Encoding"] = "gzip"
+		gzipBuffer, err := compressStringToGzip(response.Body)
+		if err != nil {
+			handleError(err, " ", -1)
+		} else {
+			response.Body = string(gzipBuffer)
+			response.Headers["Content-Length"] = strconv.Itoa(len(string(gzipBuffer)))
+		}
 	}
+
 	conn.Write([]byte(response.createResponseString()))
 }
 
