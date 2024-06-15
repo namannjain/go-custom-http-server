@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,13 +12,19 @@ import (
 var statusCodes = map[int]string{
 	200: "OK",
 	404: "Not Found",
+	201: "Created",
+}
+
+var requestTypes = map[string]string{
+	"GET":  "GET",
+	"POST": "POST",
 }
 
 type Request struct {
 	Method  string
 	Path    string
 	Headers map[string]string
-	Body    string
+	Body    []byte
 }
 
 type Response struct {
@@ -27,8 +34,10 @@ type Response struct {
 }
 
 func handleError(err error, errorMsg string, osExitCode int) {
-	fmt.Println(errorMsg, ": ", err.Error())
-	os.Exit(osExitCode)
+	fmt.Println(errorMsg, err.Error())
+	if osExitCode != -1 {
+		os.Exit(osExitCode)
+	}
 }
 
 func (r Response) createResponseString() string {
@@ -53,7 +62,7 @@ func parseRequest(req string) Request {
 	request.Method = methodAndPath[0]
 	request.Path = methodAndPath[1]
 	request.Headers = extractHeadersMap(methodPathAndHeaders[1:])
-	request.Body = ""
+	request.Body = []byte(strings.Trim(strings.Split(req, "\r\n\r\n")[1], "\x00"))
 
 	return request
 }
@@ -65,6 +74,25 @@ func extractHeadersMap(headers []string) map[string]string {
 		headersMap[strings.Trim(tokens[0], " ")] = strings.Trim(tokens[1], " ")
 	}
 	return headersMap
+}
+
+func CreateFileInDir(directory string, fileName string, fileData []byte) error {
+	//assuming directory exists
+	//create file
+	file, err := os.Create(directory + fileName)
+	if err != nil {
+		return errors.New("error creating file")
+	}
+	defer file.Close()
+
+	//write into file
+	_, err = file.Write(fileData)
+	if err != nil {
+		return errors.New("error writing to file")
+	}
+
+	fmt.Println("Successfully created file with its content")
+	return nil
 }
 
 func handleConnection(conn net.Conn) {
@@ -96,7 +124,7 @@ func handleConnection(conn net.Conn) {
 			"Content-Type":   "text/plain",
 			"Content-Length": strconv.Itoa(len(message)),
 		}
-	case strings.HasPrefix(request.Path, "/files"):
+	case strings.HasPrefix(request.Path, "/files") && request.Method == requestTypes["GET"]:
 		response.StatusCode = 404
 		fileName := strings.SplitN(request.Path, "/files/", 2)[1]
 		dir := os.Args[2]
@@ -109,6 +137,24 @@ func handleConnection(conn net.Conn) {
 				"Content-Length": strconv.Itoa(len(string(fileData))),
 			}
 		}
+	case strings.HasPrefix(request.Path, "/files") && request.Method == requestTypes["POST"]:
+		fileName := strings.SplitN(request.Path, "/files/", 2)[1]
+		dir := os.Args[2]
+		contentLength, err := strconv.Atoi(request.Headers["Content-Length"])
+		if err != nil {
+			handleError(err, "Error parsing content length on POST file request: ", -1)
+			break
+		}
+		fmt.Println(contentLength)
+		fileData := request.Body
+
+		err = CreateFileInDir(dir, fileName, fileData)
+		if err != nil {
+			handleError(err, " ", -1)
+			break
+		} else {
+			response.StatusCode = 201
+		}
 	default:
 		response.StatusCode = 404
 	}
@@ -119,14 +165,14 @@ func handleConnection(conn net.Conn) {
 func main() {
 	ln, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
-		handleError(err, "Failed to bind to port 4221", 1)
+		handleError(err, "Failed to bind to port 4221: ", 1)
 	}
 	defer ln.Close()
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			handleError(err, "Error accepting connection", 1)
+			handleError(err, "Error accepting connection: ", 1)
 		}
 
 		go handleConnection(conn)
