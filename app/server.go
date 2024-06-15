@@ -102,7 +102,7 @@ func handleConnection(conn net.Conn) {
 		dir := os.Args[2]
 		fileData, err := os.ReadFile(dir + fileName)
 		if err == nil {
-			response.statusCode = 200
+			response.StatusCode = 200
 			response.Body = string(fileData)
 			response.Headers = map[string]string{
 				"Content-Type":   "application/octet-stream",
