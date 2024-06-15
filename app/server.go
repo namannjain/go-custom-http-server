@@ -155,8 +155,8 @@ func handleConnection(conn net.Conn) {
 	}
 
 	//handle encoding
-	if acceptEncoding, ok := request.Headers["Accept-Encoding"]; ok && acceptEncoding != "invalid-encoding" && response.StatusCode != 404 {
-		response.Headers["Content-Encoding"] = acceptEncoding
+	if acceptEncoding, ok := request.Headers["Accept-Encoding"]; ok && strings.Contains(acceptEncoding, "gzip") && response.StatusCode != 404 {
+		response.Headers["Content-Encoding"] = "gzip"
 	}
 	conn.Write([]byte(response.createResponseString()))
 }
