@@ -7,13 +7,52 @@ import (
 	"strings"
 )
 
+type ResponseTemplate struct {
+	Body    string
+	Headers map[string]string
+}
+
+// func createResponseString(body string) string {
+// 	responseTemplateStr := `HTTP/1.1 200 OK\r\n{{ range $key, $value := .Headers }}{{$key}}: {{$value}}\r\n{{ end }}\r\n{{ .Body }}`
+// 	tmpl := template.Must(template.New("example").Parse(responseTemplateStr))
+
+// 	responseTemplate := ResponseTemplate{
+// 		Body: body,
+// 		Headers: map[string]string{
+// 			"Content-Type":   "text/plain",
+// 			"Content-Length": strconv.FormatInt(int64(len(body)), 10),
+// 		},
+// 	}
+
+// 	var buff bytes.Buffer
+
+// 	if err := tmpl.Execute(&buff, responseTemplate); err != nil {
+// 		fmt.Println("Error executing text template: ", err)
+// 		os.Exit(2)
+// 	}
+
+// 	return buff.String()
+// }
+
+func extractHeadersMap(headers []string) map[string]string {
+	headersMap := make(map[string]string)
+	for _, headerStr := range headers {
+		tokens := strings.Split(headerStr, ":")
+		headersMap[strings.Trim(tokens[0], " ")] = strings.Trim(tokens[1], " ")
+	}
+	return headersMap
+}
+
 func handleConnection(conn net.Conn) {
 	buffer := make([]byte, 1024)
 	byteSize, _ := conn.Read(buffer)
 	request := string(buffer[:byteSize])
 
-	headers := strings.Split(request, "\r\n")
-	path := strings.Split(headers[0], " ")[1]
+	requestAndHeaders := strings.Split(request, "\r\n\r\n")
+	requestAndHeaders = strings.Split(requestAndHeaders[0], "\r\n")
+	requestLine := requestAndHeaders[0]
+	headersLine := requestAndHeaders[1:]
+	path := strings.Split(requestLine, " ")[1]
 	splitPath := strings.Split(path, "/")
 
 	if path == "/" {
@@ -22,8 +61,10 @@ func handleConnection(conn net.Conn) {
 		message := splitPath[2]
 		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(message), message)))
 	} else if splitPath[1] == "user-agent" {
-		userAgent := strings.Split(headers[3], ":")[1]
-		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)))
+		headersMap := extractHeadersMap(headersLine)
+		if val, ok := headersMap["User-Agent"]; ok {
+			conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(val), val)))
+		}
 	} else {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
