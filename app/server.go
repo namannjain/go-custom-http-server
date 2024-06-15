@@ -40,17 +40,17 @@ func handleError(err error, errorMsg string, osExitCode int) {
 	}
 }
 
-func (r Response) createResponseString() string {
-	statusText, ok := statusCodes[r.StatusCode]
+func (res Response) createResponseString() string {
+	statusText, ok := statusCodes[res.StatusCode]
 	if !ok {
 		statusText = "Unknown"
 	}
 
 	var headerString strings.Builder
-	for k, v := range r.Headers {
+	for k, v := range res.Headers {
 		headerString.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
 	}
-	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", r.StatusCode, statusText, headerString.String(), r.Body)
+	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", res.StatusCode, statusText, headerString.String(), res.Body)
 }
 
 func parseRequest(req string) Request {
@@ -138,17 +138,12 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 	case strings.HasPrefix(request.Path, "/files") && request.Method == requestTypes["POST"]:
+		response.StatusCode = 404
 		fileName := strings.SplitN(request.Path, "/files/", 2)[1]
 		dir := os.Args[2]
-		contentLength, err := strconv.Atoi(request.Headers["Content-Length"])
-		if err != nil {
-			handleError(err, "Error parsing content length on POST file request: ", -1)
-			break
-		}
-		fmt.Println(contentLength)
 		fileData := request.Body
 
-		err = CreateFileInDir(dir, fileName, fileData)
+		err := CreateFileInDir(dir, fileName, fileData)
 		if err != nil {
 			handleError(err, " ", -1)
 			break
@@ -159,6 +154,10 @@ func handleConnection(conn net.Conn) {
 		response.StatusCode = 404
 	}
 
+	//handle encoding
+	if acceptEncoding, ok := request.Headers["Accept-Encoding"]; ok && acceptEncoding != "invalid-encoding" && response.StatusCode != 404 {
+		response.Headers["Content-Encoding"] = acceptEncoding
+	}
 	conn.Write([]byte(response.createResponseString()))
 }
 
