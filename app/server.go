@@ -9,9 +9,17 @@ import (
 
 func handleConnection(conn net.Conn) {
 	buffer := make([]byte, 1024)
-	conn.Read(buffer)
-	if strings.HasPrefix(string(buffer), "GET / HTTP/1.1") {
+	byteSize, _ := conn.Read(buffer)
+	request := string(buffer[:byteSize])
+
+	headers := strings.Split(request, "\r\n")
+	path := strings.Split(headers[0], " ")[1]
+
+	if path == "/" {
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+	} else if strings.Split(path, "/")[1] == "echo" {
+		message := strings.Split(path, "/")[2]
+		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(message), message)))
 	} else {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
