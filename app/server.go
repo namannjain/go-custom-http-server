@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
-// var statusCodes = map[int]string{
-// 	200: "OK",
-// 	404: "Not Found",
-// }
+var statusCodes = map[int]string{
+	200: "OK",
+	404: "Not Found",
+}
 
 type Request struct {
 	Method  string
@@ -25,50 +26,37 @@ type Response struct {
 	Body       string
 }
 
-// func handleError(err error, errorMsg string, osExitCode int) {
-// 	if err != nil {
-// 		fmt.Println(errorMsg, ": ", err.Error())
-// 		os.Exit(osExitCode)
-// 	}
-// }
+func handleError(err error, errorMsg string, osExitCode int) {
+	fmt.Println(errorMsg, ": ", err.Error())
+	os.Exit(osExitCode)
+}
 
-// func (r Response) createResponseString() string {
-// 	statusText, ok := statusCodes[r.StatusCode]
-// 	if !ok {
-// 		statusText = "Unknown"
-// 	}
+func (r Response) createResponseString() string {
+	statusText, ok := statusCodes[r.StatusCode]
+	if !ok {
+		statusText = "Unknown"
+	}
 
-// 	// No headers so assume plain text result.
-// 	if r.Headers == nil {
-// 		r.Headers = map[string]string{
-// 			"Content-Type": "text/plain",
-// 		}
-// 	}
+	var headerString strings.Builder
+	for k, v := range r.Headers {
+		headerString.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+	}
+	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", r.StatusCode, statusText, headerString.String(), r.Body)
+}
 
-// 	// Figure out content length if not set.
-// 	if _, ok = r.Headers["Content-Length"]; !ok {
-// 		r.Headers["Content-Length"] = strconv.Itoa(len(r.Body))
-// 	}
-// 	var headerString strings.Builder
-// 	for k, v := range r.Headers {
-// 		headerString.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
-// 	}
-// 	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", r.StatusCode, statusText, headerString.String(), r.Body)
-// }
+func parseRequest(req string) Request {
+	request := Request{
+		Headers: make(map[string]string),
+	}
+	methodPathAndHeaders := strings.Split(strings.Split(req, "\r\n\r\n")[0], "\r\n")
+	methodAndPath := strings.Split(methodPathAndHeaders[0], " ")
+	request.Method = methodAndPath[0]
+	request.Path = methodAndPath[1]
+	request.Headers = extractHeadersMap(methodPathAndHeaders[1:])
+	request.Body = ""
 
-// func parseRequest(req string) Request {
-// 	request := Request{
-// 		Headers: make(map[string]string),
-// 	}
-// 	methodPathAndHeaders := strings.Split(strings.Split(req, "\r\n\r\n")[0], "\r\n")
-// 	methodAndPath := strings.Split(methodPathAndHeaders[0], " ")
-// 	request.Method = methodAndPath[0]
-// 	request.Path = methodAndPath[1]
-// 	request.Headers = extractHeadersMap(methodPathAndHeaders[1:])
-// 	request.Body = ""
-
-// 	return request
-// }
+	return request
+}
 
 func extractHeadersMap(headers []string) map[string]string {
 	headersMap := make(map[string]string)
@@ -84,44 +72,61 @@ func handleConnection(conn net.Conn) {
 
 	buffer := make([]byte, 1024)
 	byteSize, _ := conn.Read(buffer)
-	request := string(buffer[:byteSize])
 
-	requestAndHeaders := strings.Split(request, "\r\n\r\n")
-	requestAndHeaders = strings.Split(requestAndHeaders[0], "\r\n")
-	requestLine := requestAndHeaders[0]
-	headersLine := requestAndHeaders[1:]
-	path := strings.Split(requestLine, " ")[1]
-	splitPath := strings.Split(path, "/")
+	request := parseRequest(string(buffer[:byteSize]))
+	response := Response{}
 
-	if path == "/" {
-		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-	} else if splitPath[1] == "echo" {
-		message := splitPath[2]
-		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(message), message)))
-	} else if splitPath[1] == "user-agent" {
-		headersMap := extractHeadersMap(headersLine)
-		if val, ok := headersMap["User-Agent"]; ok {
-			conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(val), val)))
+	switch {
+	case request.Path == "/":
+		response.StatusCode = 200
+	case request.Path == "/user-agent":
+		response.StatusCode = 200
+		if userAgent, ok := request.Headers["User-Agent"]; ok {
+			response.Body = userAgent
+			response.Headers = map[string]string{
+				"Content-Type":   "text/plain",
+				"Content-Length": strconv.Itoa(len(userAgent)),
+			}
 		}
-	} else {
-		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+	case strings.HasPrefix(request.Path, "/echo"):
+		response.StatusCode = 200
+		message := strings.SplitN(request.Path, "/echo/", 2)[1]
+		response.Body = message
+		response.Headers = map[string]string{
+			"Content-Type":   "text/plain",
+			"Content-Length": strconv.Itoa(len(message)),
+		}
+	case strings.HasPrefix(request.Path, "/files"):
+		response.StatusCode = 404
+		fileName := strings.SplitN(request.Path, "/files/", 2)[1]
+		dir := os.Args[2]
+		fileData, err := os.ReadFile(dir + fileName)
+		if err == nil {
+			response.statusCode = 200
+			response.Body = string(fileData)
+			response.Headers = map[string]string{
+				"Content-Type":   "application/octet-stream",
+				"Content-Length": strconv.Itoa(len(string(fileData))),
+			}
+		}
+	default:
+		response.StatusCode = 404
 	}
+
+	conn.Write([]byte(response.createResponseString()))
 }
 
 func main() {
 	ln, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
-		fmt.Println("Failed to bind to port 4221")
-		os.Exit(1)
+		handleError(err, "Failed to bind to port 4221", 1)
 	}
-
 	defer ln.Close()
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			os.Exit(1)
+			handleError(err, "Error accepting connection", 1)
 		}
 
 		go handleConnection(conn)
