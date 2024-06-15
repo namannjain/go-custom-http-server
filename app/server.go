@@ -22,7 +22,7 @@ func handleConnection(conn net.Conn) {
 		message := splitPath[2]
 		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(message), message)))
 	} else if splitPath[1] == "user-agent" {
-		userAgent := strings.Split(headers[3], ": ")[1]
+		userAgent := strings.Split(headers[3], ":")[1]
 		conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)))
 	} else {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
