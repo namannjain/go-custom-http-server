@@ -7,31 +7,67 @@ import (
 	"strings"
 )
 
-type ResponseTemplate struct {
-	Body    string
+// var statusCodes = map[int]string{
+// 	200: "OK",
+// 	404: "Not Found",
+// }
+
+type Request struct {
+	Method  string
+	Path    string
 	Headers map[string]string
+	Body    string
 }
 
-// func createResponseString(body string) string {
-// 	responseTemplateStr := `HTTP/1.1 200 OK\r\n{{ range $key, $value := .Headers }}{{$key}}: {{$value}}\r\n{{ end }}\r\n{{ .Body }}`
-// 	tmpl := template.Must(template.New("example").Parse(responseTemplateStr))
+type Response struct {
+	StatusCode int
+	Headers    map[string]string
+	Body       string
+}
 
-// 	responseTemplate := ResponseTemplate{
-// 		Body: body,
-// 		Headers: map[string]string{
-// 			"Content-Type":   "text/plain",
-// 			"Content-Length": strconv.FormatInt(int64(len(body)), 10),
-// 		},
+// func handleError(err error, errorMsg string, osExitCode int) {
+// 	if err != nil {
+// 		fmt.Println(errorMsg, ": ", err.Error())
+// 		os.Exit(osExitCode)
+// 	}
+// }
+
+// func (r Response) createResponseString() string {
+// 	statusText, ok := statusCodes[r.StatusCode]
+// 	if !ok {
+// 		statusText = "Unknown"
 // 	}
 
-// 	var buff bytes.Buffer
-
-// 	if err := tmpl.Execute(&buff, responseTemplate); err != nil {
-// 		fmt.Println("Error executing text template: ", err)
-// 		os.Exit(2)
+// 	// No headers so assume plain text result.
+// 	if r.Headers == nil {
+// 		r.Headers = map[string]string{
+// 			"Content-Type": "text/plain",
+// 		}
 // 	}
 
-// 	return buff.String()
+// 	// Figure out content length if not set.
+// 	if _, ok = r.Headers["Content-Length"]; !ok {
+// 		r.Headers["Content-Length"] = strconv.Itoa(len(r.Body))
+// 	}
+// 	var headerString strings.Builder
+// 	for k, v := range r.Headers {
+// 		headerString.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+// 	}
+// 	return fmt.Sprintf("HTTP/1.1 %d %s\r\n%s\r\n%s", r.StatusCode, statusText, headerString.String(), r.Body)
+// }
+
+// func parseRequest(req string) Request {
+// 	request := Request{
+// 		Headers: make(map[string]string),
+// 	}
+// 	methodPathAndHeaders := strings.Split(strings.Split(req, "\r\n\r\n")[0], "\r\n")
+// 	methodAndPath := strings.Split(methodPathAndHeaders[0], " ")
+// 	request.Method = methodAndPath[0]
+// 	request.Path = methodAndPath[1]
+// 	request.Headers = extractHeadersMap(methodPathAndHeaders[1:])
+// 	request.Body = ""
+
+// 	return request
 // }
 
 func extractHeadersMap(headers []string) map[string]string {
@@ -44,6 +80,8 @@ func extractHeadersMap(headers []string) map[string]string {
 }
 
 func handleConnection(conn net.Conn) {
+	defer conn.Close()
+
 	buffer := make([]byte, 1024)
 	byteSize, _ := conn.Read(buffer)
 	request := string(buffer[:byteSize])
@@ -77,11 +115,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	conn, err := ln.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
-	}
+	defer ln.Close()
 
-	handleConnection(conn)
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+
+		go handleConnection(conn)
+	}
 }
