@@ -110,11 +110,6 @@ func compressStringToGzip(data string) (bytes.Buffer, error) {
 		return emptyBuffer, fmt.Errorf("error writing data to Gzip writer: %w", err)
 	}
 
-	// err = gzipWriter.Flush()
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error flushing Gzip writer: %w", err)
-	// }
-
 	return gzipBuffer, nil
 }
 
