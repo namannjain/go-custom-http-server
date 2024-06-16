@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"strconv"
@@ -100,7 +101,6 @@ func CreateFileInDir(directory string, fileName string, fileData []byte) error {
 
 func compressStringToGzip(data string) ([]byte, error) {
 	var gzipBuffer bytes.Buffer
-
 	gzipWriter := gzip.NewWriter(&gzipBuffer)
 	defer gzipWriter.Close()
 
@@ -111,6 +111,15 @@ func compressStringToGzip(data string) ([]byte, error) {
 	}
 
 	return gzipBuffer.Bytes(), nil
+}
+
+func decompressGzip(data []byte) []byte {
+	reader := bytes.NewReader(data)
+	gzipReader, _ := gzip.NewReader(reader)
+	defer gzipReader.Close()
+
+	decompressedData, _ := ioutil.ReadAll(gzipReader)
+	return decompressedData
 }
 
 func handleConnection(conn net.Conn) {
@@ -179,6 +188,7 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			handleError(err, " ", -1)
 		} else {
+			fmt.Println(string(decompressGzip(gzipBuffer)))
 			response.Body = string(gzipBuffer)
 			response.Headers["Content-Length"] = strconv.Itoa(len(response.Body))
 		}
