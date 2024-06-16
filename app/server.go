@@ -98,7 +98,7 @@ func CreateFileInDir(directory string, fileName string, fileData []byte) error {
 	return nil
 }
 
-func compressStringToGzip(data string) (bytes.Buffer, error) {
+func compressStringToGzip(data string) ([]byte, error) {
 	var gzipBuffer bytes.Buffer
 
 	gzipWriter := gzip.NewWriter(&gzipBuffer)
@@ -106,11 +106,11 @@ func compressStringToGzip(data string) (bytes.Buffer, error) {
 
 	_, err := gzipWriter.Write([]byte(data))
 	if err != nil {
-		var emptyBuffer bytes.Buffer
-		return emptyBuffer, fmt.Errorf("error writing data to Gzip writer: %w", err)
+		var emptyArr []byte
+		return emptyArr, fmt.Errorf("error writing data to Gzip writer: %w", err)
 	}
 
-	return gzipBuffer, nil
+	return gzipBuffer.Bytes(), nil
 }
 
 func handleConnection(conn net.Conn) {
@@ -179,8 +179,8 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			handleError(err, " ", -1)
 		} else {
-			response.Body = gzipBuffer.String()
-			response.Headers["Content-Length"] = fmt.Sprint(len(response.Body))
+			response.Body = string(gzipBuffer)
+			response.Headers["Content-Length"] = strconv.Itoa(len(response.Body))
 		}
 	}
 
